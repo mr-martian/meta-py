@@ -60,3 +60,8 @@
 	    (print ((attr ln strip))))
 (file-lines ln ("potato.txt" "rw+")
 	    (print ((attr ln strip))))
+
+(load "test-lib.lisp")
+(octothorpe fa)
+(octothorpe fb)
+;(print 7)

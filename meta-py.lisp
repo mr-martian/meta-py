@@ -6,7 +6,8 @@
     :< :> :<= :>=
     := :/=
     :cond
-    :return))
+    :return
+    :load))
 
 (in-package :common-lisp)
 
@@ -79,7 +80,10 @@
               (as-user (eval `(defmacro ,(cadr subtree) ,fixed
                                 (let ,bindings ,@(cdddr subtree)))))
               nil)
-            (mapcar #'eval-def subtree))
+            (if (and (symbolp (car subtree))
+                  (eq (reintern (car subtree)) 'load))
+              (cons 'progn (mapcar #'eval-def (parse-file (cadr subtree))))
+              (mapcar #'eval-def subtree)))
           subtree)))
     (eval-def tree)))
 
@@ -337,14 +341,14 @@
                 (main (cadr files))
                 (rest (cddr files)))
           (push (cons nil (open main :direction :output
-                            :if-exists :overwrite
+                            :if-exists :supersede
                             :if-does-not-exist :create))
             out-files)
           (push (cdar out-files) stream-stack)
           (loop for pair in rest do
             (push (cons (car pair)
                     (open (cadr pair) :direction :output
-                      :if-exists :overwrite
+                      :if-exists :supersede
                       :if-does-not-exist :create))
               out-files))
           (ppb (cdr tree))
