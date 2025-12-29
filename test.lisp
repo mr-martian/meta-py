@@ -1,3 +1,6 @@
+(set-files "blah.py"
+	   (alt "blah2.py"))
+
 (def x (a b)
   (print "%s
 %s" a b))
@@ -16,6 +19,10 @@
        (def __init__ (self x y)
 	 (= (attr self x) x)
 	 (= (attr self y) y)
+	 (with-secondary-file alt
+	   (print 3)
+	   (def potato (a b)
+	     (return (+ a b))))
 	 (global const)
 	 (+= (attr self y) const)
 	 ((attr self potato) 3 4)))

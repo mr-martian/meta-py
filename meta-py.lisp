@@ -95,7 +95,9 @@
 
 (defun prettyprint (tree)
   (let ((indent -1)
-         (block-has-statement nil))
+         (block-has-statement nil)
+         (out-files nil)
+         (stream-stack '(t)))
     (labels
       ((escape-string (s)
          (concatenate 'string
@@ -105,29 +107,31 @@
                          (otherwise (list c))))))
         (name (sym)
           (string-downcase (string sym)))
+        (output (&rest args)
+          (apply #'format (cons (car stream-stack) args)))
         (ppe-sep (sequence separator &key (parens nil))
-          (when parens (format t "("))
+          (when parens (output "("))
           (when sequence
             (ppe (car sequence))
             (loop for item in (cdr sequence)
               do (progn
-                   (format t "~a" separator)
+                   (output "~a" separator)
                    (ppe item))))
-          (when parens (format t ")")))
+          (when parens (output ")")))
         (ppe-bin (op a b &key (parens t))
-          (when parens (format t "("))
+          (when parens (output "("))
           (ppe a)
-          (format t " ~a " op)
+          (output " ~a " op)
           (ppe b)
-          (when parens (format t ")")))
+          (when parens (output ")")))
         (ppe-unary (op x &key (parens t))
-          (when parens (format t "("))
-          (format t "~a" op)
+          (when parens (output "("))
+          (output "~a" op)
           (ppe x)
-          (when parens (format t ")")))
+          (when parens (output ")")))
         (ppe (tree &key (parens t))
           (cond
-            ((symbolp tree) (format t "~a" tree))
+            ((symbolp tree) (output "~a" tree))
             ((and (listp tree) (symbolp (car tree)))
               (case (intern (string-upcase (string (car tree))))
                 ((** * @ / // % << >> & ^ < <= > >= != ==)
@@ -151,21 +155,21 @@
                   (if (symbolp (caddr tree))
                     (progn
                       (ppe (cadr tree))
-                      (format t ".~a" (caddr tree)))
+                      (output ".~a" (caddr tree)))
                     (ppe (cons '|getattr| (cdr tree)))))
                 ; TODO: lambda, if, dict, set, list, comprehensions
                 ; TODO: await, yield, yield-from
                 ; TODO: strings, getitem, slice
                 (otherwise
                   (progn
-                    (format t "~a" (car tree))
+                    (output "~a" (car tree))
                     (ppe-sep (cdr tree) ", " :parens t)))))
             ((stringp tree)
-              (format t "~a"
+              (output "~a"
                 (concatenate 'string '(#\")
                   (escape-string tree)
                   '(#\"))))
-            ((numberp tree) (format t "~a" tree))
+            ((numberp tree) (output "~a" tree))
             ((and (listp tree) (listp (car tree)))
               (progn
                 (ppe (car tree) :parens nil)
@@ -177,7 +181,7 @@
           (setf block-has-statement nil)
           (mapcar #'pps statements)
           (unless block-has-statement
-            (format t "~v{~a~:*~}pass~%" indent '("    ")))
+            (output "~v{~a~:*~}pass~%" indent '("    ")))
           (setf block-has-statement t)
           (decf indent))
         (pps (tree)
@@ -185,69 +189,77 @@
             (if (and (listp tree) (symbolp (car tree)))
               (when tree
                 (case (intern (string-upcase (string (car tree))))
+                  (with-secondary-file
+                    (let ((cur-indent indent))
+                      (setf indent -1)
+                      (push (cdr (assoc (cadr tree) out-files))
+                        stream-stack)
+                      (ppb (cddr tree))
+                      (pop stream-stack)
+                      (setf indent cur-indent)))
                   (progn (mapcar #'pps (cdr tree)))
                   (def ; TODO: decorators
                     (progn
-                      (format t "~adef ~a(~{~a~^, ~}):~%"
+                      (output "~adef ~a(~{~a~^, ~}):~%"
                         istr (cadr tree) (caddr tree))
                       (ppb (cdddr tree))))
                   (class ; TODO: decorators, keywords
                     (progn
-                      (format t "~aclass ~a(~{~a~^, ~}):~%"
+                      (output "~aclass ~a(~{~a~^, ~}):~%"
                         istr (cadr tree) (caddr tree))
                       (ppb (cdddr tree))))
                   ((return del raise)
                     (progn
-                      (format t "~a~a" istr
+                      (output "~a~a" istr
                         (string-downcase (string (car tree))))
                       (when (cdr tree)
-                        (format t " ")
+                        (output " ")
                         (ppe (cadr tree)))
-                      (format t "~%")
+                      (output "~%")
                       (setf block-has-statement t)))
                   ((= += -= *= @= /= %= **= <<= >>= ^= //=)
                     ; TODO: &= |=
                     (progn
-                      (format t "~a" istr)
+                      (output "~a" istr)
                       (ppe (cadr tree))
-                      (format t " ~a " (car tree))
+                      (output " ~a " (car tree))
                       (ppe (caddr tree) :parens nil)
-                      (format t "~%")
+                      (output "~%")
                       (setf block-has-statement t)))
                   (for
                     (progn
-                      (format t "~afor " istr)
+                      (output "~afor " istr)
                       (ppe (cadr tree))
-                      (format t " in ")
+                      (output " in ")
                       (ppe (caddr tree))
-                      (format t ":~%")
+                      (output ":~%")
                       (ppb (cdddr tree))
                       (setf block-has-statement t)))
                   (for-else
                     (progn
-                      (format t "~afor " istr)
+                      (output "~afor " istr)
                       (ppe (second tree))
-                      (format t " in ")
+                      (output " in ")
                       (ppe (third tree))
-                      (format t ":~%")
+                      (output ":~%")
                       (ppb (fourth tree))
-                      (format t "~aelse:~%" istr)
+                      (output "~aelse:~%" istr)
                       (ppb (fifth tree))
                       (setf block-has-statement t)))
                   (while
                     (progn
-                      (format t "~awhile " istr)
+                      (output "~awhile " istr)
                       (ppe (cadr tree))
-                      (format t ":~%")
+                      (output ":~%")
                       (ppb (cddr tree))
                       (setf block-has-statement t)))
                   (while-else
                     (progn
-                      (format t "~awhile " istr)
+                      (output "~awhile " istr)
                       (ppe (second tree))
-                      (format t ":~%")
+                      (output ":~%")
                       (ppb (third tree))
-                      (format t "~aelse:~%" istr)
+                      (output "~aelse:~%" istr)
                       (ppb (fourth tree))
                       (setf block-has-statement t)))
                   (cond
@@ -256,67 +268,88 @@
                         (let ((curln (length subtree)))
                           (if (and (> ln 1) (= curln 1))
                             (progn
-                              (format t "~aelse:~%" istr)
+                              (output "~aelse:~%" istr)
                               (ppb subtree))
                             (progn
-                              (format t "~a~a " istr
+                              (output "~a~a " istr
                                 (if (= ln curln) "if" "elif"))
                               (ppe (caar subtree))
-                              (format t ":~%")
+                              (output ":~%")
                               (ppb (cdar subtree))))))
                       (setf block-has-statement t)))
                   (with
                     (progn
-                      (format t "~awith " istr)
+                      (output "~awith " istr)
                       (let* ((items (cadr tree))
                               (first (car items))
                               (ln (length items)))
-                        (when (> ln 1) (format t "("))
+                        (when (> ln 1) (output "("))
                         (ppe (cadr first) :parens nil)
-                        (format t " as ")
+                        (output " as ")
                         (ppe (car first) :parens nil)
                         (loop for it in (cdr items) do
                           (progn
-                            (format t ", ")
+                            (output ", ")
                             (ppe (cadr it) :parens nil)
-                            (format t " as ")
+                            (output " as ")
                             (ppe (car it) :parens nil)))
-                        (when (> ln 1) (format t ")"))
-                        (format t ":~%"))
+                        (when (> ln 1) (output ")"))
+                        (output ":~%"))
                       (ppb (cddr tree))))
                   ; TODO: try, assert
                   ((import global nonlocal)
                     (progn
-                      (format t "~a~a " istr
+                      (output "~a~a " istr
                         (string-downcase (string (car tree))))
                       (ppe-sep (cdr tree) ", ")
-                      (format t "~%")
+                      (output "~%")
                       (setf block-has-statement t)))
                   (import-from
                     (progn
-                      (format t "~afrom " istr)
+                      (output "~afrom " istr)
                       (ppe (cadr tree) :parens nil)
-                      (format t " import ")
+                      (output " import ")
                       (ppe-sep (cddr tree) ", ")
-                      (format t "~%")
+                      (output "~%")
                       (setf block-has-statement t)))
                   ((pass break continue)
                     (progn
-                      (format t "~a~a~%" istr
+                      (output "~a~a~%" istr
                         (string-downcase (string (car tree))))
                       (setf block-has-statement t)))
                   (otherwise
                     (progn
-                      (format t "~a" istr)
+                      (output "~a" istr)
                       (ppe tree)
-                      (format t "~%")
+                      (output "~%")
                       (setf block-has-statement t)))))
               (progn
-                (format t "~a" istr)
+                (output "~a" istr)
                 (ppe tree)
-                (format t "~%")
+                (output "~%")
                 (setf block-has-statement t))))))
-      (ppb tree))))
+      (if (and
+            (listp tree)
+            (listp (car tree))
+            (symbolp (caar tree))
+            (string= (name (caar tree)) "set-files"))
+        (let* ((files (car tree))
+                (main (cadr files))
+                (rest (cddr files)))
+          (push (cons nil (open main :direction :output
+                            :if-exists :overwrite
+                            :if-does-not-exist :create))
+            out-files)
+          (push (cdar out-files) stream-stack)
+          (loop for pair in rest do
+            (push (cons (car pair)
+                    (open (cadr pair) :direction :output
+                      :if-exists :overwrite
+                      :if-does-not-exist :create))
+              out-files))
+          (ppb (cdr tree))
+          (loop for pair in out-files do (close (cdr pair))))
+        (ppb tree)))))
 
 (let ((orig (parse-file "test.lisp")))
   (print orig)
