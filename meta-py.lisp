@@ -201,6 +201,20 @@
                       (ppb (cddr tree))
                       (pop stream-stack)
                       (setf indent cur-indent)))
+                  (set-files
+                    (let ((main (cadr tree))
+                           (rest (cddr tree)))
+                      (push (cons nil (open main :direction :output
+                                        :if-exists :supersede
+                                        :if-does-not-exist :create))
+                        out-files)
+                      (push (cdar out-files) stream-stack)
+                      (loop for pair in rest do
+                        (push (cons (car pair)
+                                (open (cadr pair) :direction :output
+                                  :if-exists :supersede
+                                  :if-does-not-exist :create))
+                          out-files))))
                   (progn (mapcar #'pps (cdr tree)))
                   (def ; TODO: decorators
                     (progn
@@ -332,36 +346,19 @@
                 (ppe tree)
                 (output "~%")
                 (setf block-has-statement t))))))
-      (if (and
-            (listp tree)
-            (listp (car tree))
-            (symbolp (caar tree))
-            (string= (name (caar tree)) "set-files"))
-        (let* ((files (car tree))
-                (main (cadr files))
-                (rest (cddr files)))
-          (push (cons nil (open main :direction :output
-                            :if-exists :supersede
-                            :if-does-not-exist :create))
-            out-files)
-          (push (cdar out-files) stream-stack)
-          (loop for pair in rest do
-            (push (cons (car pair)
-                    (open (cadr pair) :direction :output
-                      :if-exists :supersede
-                      :if-does-not-exist :create))
-              out-files))
-          (ppb (cdr tree))
-          (loop for pair in out-files do (close (cdr pair))))
-        (ppb tree)))))
+      (ppb tree)
+      (loop for pair in out-files do (close (cdr pair))))))
 
-(let ((orig (parse-file "test.lisp")))
-  (print orig)
-  (format t "~%###########~%")
-  (let ((post-eval (eval-macros orig)))
-    (print post-eval)
+(if (> (length sb-ext:*posix-argv*) 1)
+  (prettyprint
+    (apply-macros (eval-macros (parse-file (cadr sb-ext:*posix-argv*)))))
+  (let ((orig (parse-file "test.lisp")))
+    (print orig)
     (format t "~%###########~%")
-    (let ((post-apply (apply-macros post-eval)))
-      (print post-apply)
+    (let ((post-eval (eval-macros orig)))
+      (print post-eval)
       (format t "~%###########~%")
-      (prettyprint post-apply))))
+      (let ((post-apply (apply-macros post-eval)))
+        (print post-apply)
+        (format t "~%###########~%")
+        (prettyprint post-apply)))))
